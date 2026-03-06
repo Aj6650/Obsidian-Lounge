@@ -3848,7 +3848,7 @@ function TitleScreen({ chips, onSelectGame, onRebuy, stats, onResetStats, userna
                 sub={stats.netProfit !== 0 ? `${stats.netProfit >= 0 ? "+" : ""}${stats.netProfit.toLocaleString()} net` : ""} accent={activeTheme.accent} />
               <StatCard label="Rebuys" value={stats.rebuys}
                 color={stats.rebuys > 5 ? "#ef4444" : stats.rebuys > 0 ? "#f97316" : "#22c55e"}
-                sub={stats.rebuys > 0 ? `${(stats.rebuys * 1000).toLocaleString()} rebought` : "clean run!"} accent={activeTheme.accent} />
+                sub={stats.rebuys > 0 ? `$${(stats.totalRebuySpend || 0).toLocaleString()} rebought` : "clean run!"} accent={activeTheme.accent} />
               <StatCard label="Luck Rating" value={(() => {
                 if (stats.totalWagered < 100) return "—";
                 const expectedReturn = stats.totalWagered * 0.96;
@@ -4772,7 +4772,7 @@ function HandDisplay({ cards, hideFirst = false, label, value, isActive = false,
     </div>
   );
 }
-function BlackjackGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}, setLastBet, winStreak = 0, vipPoints = 0, achCount = 0, reportLoss, applyWin = null, onBetPlaced = null, onRoundEnd, skipOverlays = false, skipEffects = false, theme = "dark", skinTheme, skinId = "house", activePowerUps = [] }) {
+function BlackjackGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}, setLastBet, winStreak = 0, vipPoints = 0, achCount = 0, reportLoss, applyWin = null, applyChipsReturn = null, onBetPlaced = null, onRoundEnd, skipOverlays = false, skipEffects = false, theme = "dark", skinTheme, skinId = "house", activePowerUps = [] }) {
   const [deck, setDeck] = useState(() => createDeck(6));
   const [playerHands, setPlayerHands] = useState([[]]);
   const [activeHand, setActiveHand] = useState(0);
@@ -4818,7 +4818,7 @@ function BlackjackGame({ chips, setChips, onBack, onRebuy, startChips, lastBets 
     setActiveHand(0); setInsuranceOffered(false); setInsuranceBet(0);
     if (isBJ(p)) {
       if (isBJ(dl)) {
-        setResults(["push"]); setChips(c => c + bet);
+        setResults(["push"]); if (applyChipsReturn) applyChipsReturn(bet); else setChips(c => c + bet);
         setMessage("Both blackjack — Push!");
         setStats(s => ({ ...s, pushes: s.pushes + 1 }));
         setPhase("resolved"); triggerLights("push");
@@ -4864,7 +4864,7 @@ function BlackjackGame({ chips, setChips, onBack, onRebuy, startChips, lastBets 
   const surrender = () => {
     if (phase !== "playing" || playerHands[activeHand]?.length !== 2) return;
     const refund = Math.floor(bet / 2);
-    setChips(c => c + refund); setResults(["surrender"]);
+    if (applyChipsReturn) applyChipsReturn(refund); else setChips(c => c + refund); setResults(["surrender"]);
     setMessage(`Surrendered — $${refund} returned`);
     setStats(s => ({ ...s, losses: s.losses + 1 }));
     setPhase("resolved"); triggerLights("loss");
@@ -4894,6 +4894,7 @@ function BlackjackGame({ chips, setChips, onBack, onRebuy, startChips, lastBets 
     const h = playerHands[activeHand];
     if (h.length !== 2 || h[0].rank !== h[1].rank) return;
     if (chips < bets[activeHand]) return;
+    const isAces = h[0].rank === "A";
     setChips(c => c - bets[activeHand]);
     const c1 = drawCard(), c2 = drawCard();
     const nh = [...playerHands];
@@ -4903,7 +4904,12 @@ function BlackjackGame({ chips, setChips, onBack, onRebuy, startChips, lastBets 
     nb.splice(activeHand, 1, bets[activeHand], bets[activeHand]);
     setBets(nb);
     betsRef.current = nb;
-    setMessage(`Hand ${activeHand + 1} of ${nh.length}`);
+    if (isAces) {
+      setMessage(`Split Aces — one card each`);
+      resolve(nh);
+    } else {
+      setMessage(`Hand ${activeHand + 1} of ${nh.length}`);
+    }
   };
   const nextHand = (hands) => {
     if (activeHand < hands.length - 1) {
@@ -4937,7 +4943,7 @@ function BlackjackGame({ chips, setChips, onBack, onRebuy, startChips, lastBets 
     if (net > 0) {
       if (applyWin) applyWin(tw); else setChips(c => c + tw);
     } else {
-      setChips(c => c + tw);
+      if (applyChipsReturn) applyChipsReturn(tw); else setChips(c => c + tw);
     }
     setResults(nr); setStats(ns);
     if (net > 0) {
@@ -4957,7 +4963,6 @@ function BlackjackGame({ chips, setChips, onBack, onRebuy, startChips, lastBets 
   const newRound = () => {
     setBigWin(null);
     fx.clearLights();
-    if (chips <= 0) { setStats({ wins:0, losses:0, pushes:0, blackjacks:0 }); }
     setMessage("Place your bet");
     setPlayerHands([[]]); setDealerHand([]); setResults([]);
     setBets([0]); setActiveHand(0); setPhase("betting");
@@ -6483,7 +6488,7 @@ function simPlinkoBall(b, dt) {
   const x = from.x + (to.x - from.x) * xRaw + bounce * (to.x > from.x ? -1 : 1);
   return { ...b, x, y, elapsed };
 }
-function PlinkoGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}, setLastBet, winStreak = 0, vipPoints = 0, achCount = 0, reportLoss, applyWin = null, onBetPlaced = null, onRoundEnd, skipOverlays = false, skipEffects = false, theme = "dark", skinTheme, skinId = "house", activePowerUps = [] }) {
+function PlinkoGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}, setLastBet, winStreak = 0, vipPoints = 0, achCount = 0, reportLoss, applyWin = null, applyChipsReturn = null, onBetPlaced = null, onRoundEnd, skipOverlays = false, skipEffects = false, theme = "dark", skinTheme, skinId = "house", activePowerUps = [] }) {
   const [bet, setBet] = useState(() => Math.min(lastBets?.plinko || 5, chips));
   useEffect(() => { if (setLastBet) setLastBet("plinko", bet); }, [bet, setLastBet]);
   const [message, setMessage] = useState("Drop the ball");
@@ -6516,7 +6521,7 @@ function PlinkoGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {
             const mult = PLINKO_MULTS[slot] || 0.2;
             const win = Math.round(b.bet * mult);
             if (mult >= 1) { if (applyWin) applyWin(win); else setChips(c => c + win); }
-            else setChips(c => c + win);
+            else { if (applyChipsReturn) applyChipsReturn(win); else setChips(c => c + win); }
             setHistory(h => [mult, ...h].slice(0, 12));
             setSlotFlashes(f => ({ ...f, [slot]: now }));
             if (mult >= 26) {
@@ -7714,7 +7719,7 @@ function DiceGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {},
     </GameShell>
   );
 }
-function CrapsGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}, setLastBet, winStreak = 0, vipPoints = 0, achCount = 0, reportLoss, applyWin = null, onBetPlaced = null, onRoundEnd, skipOverlays = false, skipEffects = false, theme = "dark", skinTheme, skinId = "house", activePowerUps = [] }) {
+function CrapsGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}, setLastBet, winStreak = 0, vipPoints = 0, achCount = 0, reportLoss, applyWin = null, applyChipsReturn = null, onBetPlaced = null, onRoundEnd, skipOverlays = false, skipEffects = false, theme = "dark", skinTheme, skinId = "house", activePowerUps = [] }) {
   const [bet, setBet] = useState(() => Math.min(lastBets?.craps || 25, chips));
   useEffect(() => { if (setLastBet) setLastBet("craps", bet); }, [bet, setLastBet]);
   const [betType, setBetType] = useState("pass");
@@ -7733,35 +7738,36 @@ function CrapsGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}
     bigWin, setBigWin, dismissOverlay, dismissAll, celebrateWin, shellEffects, coinRainActive, triggerCoins, softCoinRain, washType, triggerWash,
     confetti, triggerConfetti, eruptionActive, triggerEruption } = fx;
   const processCome = (sum) => {
-    let payout = 0;
+    let winPayout = 0, pushReturn = 0;
     const remaining = [];
     for (const cb of comeBets) {
       if (cb.point === null) {
         if (cb.type === "come") {
-          if (sum === 7 || sum === 11) { payout += cb.amount * 2; }
+          if (sum === 7 || sum === 11) { winPayout += cb.amount * 2; }
           else if (sum === 2 || sum === 3 || sum === 12) {  }
           else { remaining.push({...cb, point: sum}); }
         } else {
           if (sum === 7 || sum === 11) {  }
-          else if (sum === 2 || sum === 3) { payout += cb.amount * 2; }
-          else if (sum === 12) { payout += cb.amount;  }
+          else if (sum === 2 || sum === 3) { winPayout += cb.amount * 2; }
+          else if (sum === 12) { pushReturn += cb.amount;  }
           else { remaining.push({...cb, point: sum}); }
         }
       } else {
         if (cb.type === "come") {
-          if (sum === cb.point) { payout += cb.amount * 2; }
+          if (sum === cb.point) { winPayout += cb.amount * 2; }
           else if (sum === 7) {  }
           else { remaining.push(cb); }
         } else {
-          if (sum === 7) { payout += cb.amount * 2; }
+          if (sum === 7) { winPayout += cb.amount * 2; }
           else if (sum === cb.point) {  }
           else { remaining.push(cb); }
         }
       }
     }
-    if (payout > 0) setChips(c => c + payout);
+    if (winPayout > 0) { if (applyWin) applyWin(winPayout); else setChips(c => c + winPayout); }
+    if (pushReturn > 0) { if (applyChipsReturn) applyChipsReturn(pushReturn); else setChips(c => c + pushReturn); }
     setComeBets(remaining);
-    return payout;
+    return winPayout + pushReturn;
   };
   const animateRoll = (callback) => {
     let count = 0;
@@ -7828,7 +7834,7 @@ function CrapsGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}
           setHistory(h => [...h.slice(-14), { sum, type:"comeout", result:"win" }]);
           setPhase("result");
         } else if (sum === 12) {
-          setChips(c => c + bet);
+          if (applyChipsReturn) applyChipsReturn(bet); else setChips(c => c + bet);
           setWon(false);
           setResultMsg(`12 — Push. Bet returned.`);
           triggerLights("push");
@@ -7901,7 +7907,7 @@ function CrapsGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}
     fx.clearLights();
     if (comeBets.length > 0) {
       const refund = comeBets.reduce((sum, cb) => sum + cb.amount, 0);
-      if (refund > 0) setChips(c => c + refund);
+      if (refund > 0) { if (applyChipsReturn) applyChipsReturn(refund); else setChips(c => c + refund); }
     }
     setBet(b => Math.min(b, chips > 0 ? chips : 25));
     setPhase("betting");
@@ -8114,8 +8120,8 @@ function CrapsGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}
   );
 }
 const KENO_PAYOUTS = {
-  1: { 1: 3.2 },
-  2: { 1: 1.5, 2: 4.5 },
+  1: { 1: 3.7 },
+  2: { 1: 1.8, 2: 4.5 },
   3: { 2: 4, 3: 20 },
   4: { 2: 2, 3: 7, 4: 40 },
   5: { 2: 1.5, 3: 3, 4: 12, 5: 70 },
@@ -8233,7 +8239,7 @@ function KenoGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {},
         <p><span style={{color:_themeAccent}}>Pick Numbers:</span> Select 1 to 10 numbers from a grid of 40. Use Quick Pick buttons for random selections.</p>
         <p><span style={{color:_themeAccent}}>The Draw:</span> 10 numbers are drawn randomly, one at a time. Matching numbers are "hits."</p>
         <p><span style={{color:_themeAccent}}>Payouts:</span> Depend on how many numbers you picked and how many you hit. More picks = harder to hit all, but higher maximum payout.</p>
-        <p><span style={{color:_themeAccent}}>Example Payouts:</span> 1 pick/1 hit = 3.5×. 5 picks/5 hits = 200×. 10 picks/10 hits = 10,000×.</p>
+        <p><span style={{color:_themeAccent}}>Example Payouts:</span> 1 pick/1 hit = 3.7×. 5 picks/5 hits = 200×. 10 picks/10 hits = 10,000×.</p>
         <p><span style={{color:_themeAccent}}>Strategy:</span> Fewer picks give better odds of hitting but lower max payouts. More picks are lottery-style — unlikely but huge. The payout table updates based on your pick count.</p>
         <p style={{color:T.muted, fontSize:11}}>RTP: ~92%. High volatility with more picks.</p>
       </>}>
@@ -8404,7 +8410,7 @@ function baccaratVal(card) {
 function baccaratTotal(cards) {
   return cards.reduce((sum, c) => sum + baccaratVal(c), 0) % 10;
 }
-function BaccaratGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}, setLastBet, winStreak = 0, vipPoints = 0, achCount = 0, reportLoss, applyWin = null, onBetPlaced = null, onRoundEnd, skipOverlays = false, skipEffects = false, theme = "dark", skinTheme, skinId = "house", activePowerUps = [] }) {
+function BaccaratGame({ chips, setChips, onBack, onRebuy, startChips, lastBets = {}, setLastBet, winStreak = 0, vipPoints = 0, achCount = 0, reportLoss, applyWin = null, applyChipsReturn = null, onBetPlaced = null, onRoundEnd, skipOverlays = false, skipEffects = false, theme = "dark", skinTheme, skinId = "house", activePowerUps = [] }) {
   const [bet, setBet] = useState(() => Math.min(lastBets?.baccarat || 25, chips));
   useEffect(() => { if (setLastBet) setLastBet("baccarat", bet); }, [bet, setLastBet]);
   const [betType, setBetType] = useState("player");
@@ -8472,7 +8478,7 @@ function BaccaratGame({ chips, setChips, onBack, onRebuy, startChips, lastBets =
       }
       if (payout > 0) {
         if (isWin) { if (applyWin) applyWin(payout); else setChips(c => c + payout); }
-        else setChips(c => c + payout);
+        else { if (applyChipsReturn) applyChipsReturn(payout); else setChips(c => c + payout); }
         if (isWin) {
           const profit = payout - bet;
           setWinAmount(payout);
@@ -8687,10 +8693,10 @@ const SCRATCH_TIER_STYLE = (cost) => {
   return { label:"LUCKY PENNY", color:"#8b7355", accent:"#a08060", icon:"♣" };
 };
 const PRIZE_POOL_WEIGHTS = [
-  { mult: 1,    weight: 88   },
-  { mult: 2,    weight: 6    },
-  { mult: 3,    weight: 2.5  },
-  { mult: 5,    weight: 1.8  },
+  { mult: 1,    weight: 70   },
+  { mult: 2,    weight: 10   },
+  { mult: 3,    weight: 5    },
+  { mult: 5,    weight: 4    },
   { mult: 10,   weight: 0.9  },
   { mult: 25,   weight: 0.4  },
   { mult: 50,   weight: 0.15 },
@@ -8708,8 +8714,8 @@ function pickPrizeMult() {
 }
 function generateScratchTicket(ticketCost, forceJackpotFlag = false) {
   const jackpot = forceJackpotFlag || Math.random() < 0.000001;
-  const isWinner = jackpot ? true : Math.random() < 0.25;
-  const matchCount = jackpot ? (2 + Math.floor(Math.random() * 2)) : isWinner ? (Math.random() < 0.82 ? 1 : Math.random() < 0.78 ? 2 : 3) : 0;
+  const isWinner = jackpot ? true : Math.random() < 0.40;
+  const matchCount = jackpot ? (2 + Math.floor(Math.random() * 2)) : isWinner ? (Math.random() < 0.65 ? 1 : Math.random() < 0.70 ? 2 : 3) : 0;
   const pool = Array.from({length:30},(_,i)=>i+1);
   const shuffle = arr => { for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];} return arr; };
   shuffle(pool);
@@ -8744,10 +8750,10 @@ function generateScratchTicket(ticketCost, forceJackpotFlag = false) {
     if (!special && Math.random() < 0.04) special = "fire";
     yourNumbers.push({ number: num, prize, special, isMatch: matchPositions.has(i) });
   }
-  const bonusWin = Math.random() < 0.06;
+  const bonusWin = Math.random() < 0.12;
   const bonusMult = [1,1,1,2,2,3][Math.floor(Math.random()*6)];
   const bonus = { prize: Math.max(1, Math.round(ticketCost * bonusMult)), isWinner: bonusWin };
-  return { winningNumbers, yourNumbers, bonus, jackpot };
+  return { winningNumbers, yourNumbers, bonus, jackpot, ticketCost };
 }
 function calcTicketPayout(ticket) {
   let total = 0;
@@ -8772,8 +8778,9 @@ function calcTicketPayout(ticket) {
     total *= 10000;
     winDetails.forEach(w => w.prize *= 10000);
   } else if (jackpot) {
-    total = 10000;
-    winDetails.push({ index: "jackpot", prize: 10000 });
+    const jackpotFallback = Math.max(10000, (ticket.ticketCost || 0) * 10000);
+    total = jackpotFallback;
+    winDetails.push({ index: "jackpot", prize: jackpotFallback });
   }
   return { total, winDetails, jackpot: jackpot };
 }
@@ -9267,6 +9274,7 @@ const INITIAL_STATS = {
   biggestWinGame: null,
   totalWagered: 0,
   rebuys: 0,
+  totalRebuySpend: 0,
   gamesPlayed: { blackjack:0, poker:0, roulette:0, slots:0, plinko:0, crash:0, highlow:0, dice:0, craps:0, keno:0, baccarat:0, scratch:0 },
   biggestWinPerGame: { blackjack:0, poker:0, roulette:0, slots:0, plinko:0, crash:0, highlow:0, dice:0, craps:0, keno:0, baccarat:0, scratch:0 },
   winsPerGame: { blackjack:0, poker:0, roulette:0, slots:0, plinko:0, crash:0, highlow:0, dice:0, craps:0, keno:0, baccarat:0, scratch:0 },
@@ -9477,13 +9485,6 @@ export default function Casino() {
         achievements: [...(s.achievements || [])],
       };
       const ua = updated.achievements;
-      if (prev <= 0 && chips > 0 && currentGame) {
-        updated.rebuys += 1;
-        updated.winStreak = 0;
-        updated.lossStreak = 0;
-        if (updated.rebuys >= 100) { if (!ua.includes("rebuy_100")) pendingAchievementsRef.current.push("rebuy_100"); };
-        return updated;
-      }
       if (chips > updated.peakBankroll) updated.peakBankroll = chips;
       if (diff < 0 && currentGame) {
         updated.totalWagered += Math.abs(diff);
@@ -9559,14 +9560,12 @@ export default function Casino() {
             if (updated.allInWins >= 25) { if (!ua.includes("all_in_25")) pendingAchievementsRef.current.push("all_in_25"); };
           }
         }
-        const allGameIds = ["blackjack","poker","roulette","slots","plinko","crash","highlow","dice","craps","keno","baccarat","scratch"];
-        const gp = updated.gamesPlayed || {};
-        const allPlayed = allGameIds.every(id => (gp[id] || 0) > 0);
-        if (allPlayed) { if (!ua.includes("played_all")) pendingAchievementsRef.current.push("played_all"); };
       }
-      if (diff < 0 && currentGame && prev > chips) {
-      }
-      updated.netProfit = chips - 1000 - (updated.rebuys * 1000);
+      const allGameIds = ["blackjack","poker","roulette","slots","plinko","crash","highlow","dice","craps","keno","baccarat","scratch"];
+      const gp = updated.gamesPlayed || {};
+      const allPlayed = allGameIds.every(id => (gp[id] || 0) > 0);
+      if (allPlayed) { if (!ua.includes("played_all")) pendingAchievementsRef.current.push("played_all"); };
+      updated.netProfit = chips - 1000 - (updated.totalRebuySpend || 0);
             if (chips >= 10000 && !ua.includes("bankroll_10k")) pendingAchievementsRef.current.push("bankroll_10k");
       if (chips >= 25000 && !ua.includes("bankroll_25k")) pendingAchievementsRef.current.push("bankroll_25k");
       if (chips >= 100000 && !ua.includes("bankroll_100k")) pendingAchievementsRef.current.push("bankroll_100k");
@@ -9630,7 +9629,14 @@ export default function Casino() {
     const rebuyAmount = tier.rebuy || 1000;
     setChips(rebuyAmount);
     prevChipsRef.current = rebuyAmount;
-    setStats(s => ({ ...s, rebuys: s.rebuys + 1 }));
+    setStats(s => {
+      const newRebuys = (s.rebuys || 0) + 1;
+      const ua = s.achievements || [];
+      if (newRebuys >= 100 && !ua.includes("rebuy_100")) {
+        pendingAchievementsRef.current.push("rebuy_100");
+      }
+      return { ...s, rebuys: newRebuys, winStreak: 0, lossStreak: 0, totalRebuySpend: (s.totalRebuySpend || 0) + rebuyAmount };
+    });
     setShowBusted(false);
   }, []);
   const startChipsRef = useRef(chips);
@@ -9654,6 +9660,11 @@ export default function Casino() {
     setChips(c => c + finalWin);
     return finalWin;
   }, [consumePowerUp]);
+  const applyChipsReturn = useCallback((amount) => {
+    if (amount <= 0) return;
+    prevChipsRef.current += amount;
+    setChips(c => c + amount);
+  }, []);
   const onBetPlaced = useCallback((betAmount) => {
     const aps = settingsRef.current?.activePowerUps || [];
     const pu = aps.find(p => p.type === 'vipMulti');
@@ -9668,10 +9679,13 @@ export default function Casino() {
     const insurance = aps.find(p => p.type === 'insurance');
     const shield = !insurance && aps.find(p => p.type === 'shield');
     if (insurance) {
+      prevChipsRef.current += betAmount;
       setChips(c => c + betAmount);
       consumePowerUp(insurance.itemId);
     } else if (shield) {
-      setChips(c => c + Math.floor(betAmount * shield.keep));
+      const shieldRefund = Math.floor(betAmount * shield.keep);
+      prevChipsRef.current += shieldRefund;
+      setChips(c => c + shieldRefund);
       consumePowerUp(shield.itemId);
     }
     setStats(s => {
@@ -9712,6 +9726,7 @@ export default function Casino() {
     achCount: (stats.achievements || []).length,
     reportLoss,
     applyWin,
+    applyChipsReturn,
     onBetPlaced,
     consumePowerUp,
     reportJackpot,
