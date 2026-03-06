@@ -46,7 +46,7 @@ export const GAMES = [
   { id:"baccarat", name:"Baccarat", description:"Closest to 9 wins", Icon: IconBaccarat, color:"#dc2626", rtp:"98.9%" },
   { id:"scratch", name:"Scratch Cards", description:"Scratch to win", Icon: IconScratch, color:"#eab308", rtp:"~88%" },
 ];
-export function TitleScreen({ chips, onSelectGame, onRebuy, stats, onResetStats, username, onSignOut, isGuest, userEmail, onAdminSetStats, onAdminSetChips, forceJackpot, setForceJackpot, sessionStart, sessionRounds, sessionChipsStart, settings = {}, setSettings, onVaultDeposit, onVaultWithdraw, onVaultRepayDebt }) {
+export function TitleScreen({ chips, onSelectGame, onRebuy, stats, onResetStats, username, onSignOut, isGuest, userEmail, onManualSave, saveStatus, onAdminSetStats, onAdminSetChips, forceJackpot, setForceJackpot, sessionStart, sessionRounds, sessionChipsStart, settings = {}, setSettings, onVaultDeposit, onVaultWithdraw, onVaultRepayDebt }) {
   const [tab, setTab] = useState("games");
   const [featsSubTab, setFeatsSubTab] = useState("stats");
   const [showMysteryOdds, setShowMysteryOdds] = useState(null);
@@ -1506,8 +1506,24 @@ export function TitleScreen({ chips, onSelectGame, onRebuy, stats, onResetStats,
                   GUEST — progress saves locally only
                 </div>
               )}
-              <div style={{ fontSize:10, color:T.dim, fontFamily:T.mono }}>
+              <div style={{ fontSize:10, color:T.dim, fontFamily:T.mono, marginBottom:10 }}>
                 {Object.values(stats.gamesPlayed).reduce((a,b)=>a+b,0)} rounds played · ${chips.toLocaleString()} chips
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <button onClick={onManualSave} disabled={saveStatus === "saving"}
+                  style={{
+                    padding:"7px 16px", fontSize:11, fontWeight:600, fontFamily:T.mono,
+                    background: saveStatus === "saved" ? "rgba(34,197,94,0.15)" : `${activeTheme.accent}18`,
+                    border: saveStatus === "saved" ? "1px solid rgba(34,197,94,0.4)" : `1px solid ${activeTheme.accent}40`,
+                    borderRadius:6, color: saveStatus === "saved" ? "#22c55e" : activeTheme.accent,
+                    cursor: saveStatus === "saving" ? "not-allowed" : "pointer", transition:"all 0.3s",
+                    letterSpacing:1,
+                  }}>
+                  {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "✓ Saved" : "Save Progress"}
+                </button>
+                <div style={{ fontSize:9, color:T.dim, fontFamily:T.mono }}>
+                  {saveStatus === "idle" ? "Auto-saves every 5 min" : saveStatus === "saving" ? "Saving..." : "Saved!"}
+                </div>
               </div>
             </div>
             {}

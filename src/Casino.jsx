@@ -114,6 +114,8 @@ export default function Casino() {
   const isGuestRef = useRef(false);
   const saveDebounceRef = useRef(null);
   const firstAuthCheckRef = useRef(true);
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
+  const saveStatusTimerRef = useRef(null);
   const [achievementToast, setAchievementToast] = useState(null);
   const achievementQueueRef = useRef([]);
   const pendingAchievementsRef = useRef([]);
@@ -231,14 +233,26 @@ export default function Casino() {
 
   // Firebase auth state listener — fires once on load, then on sign-in/out
   useEffect(() => {
+    // Safety timeout: if Firebase takes more than 4s on initial load, show AuthScreen anyway
+    const loadingTimeout = setTimeout(() => {
+      if (firstAuthCheckRef.current) {
+        firstAuthCheckRef.current = false;
+        setInitialLoading(false);
+      }
+    }, 4000);
+
     const unsub = onAuthStateChanged(auth, async (user) => {
+      clearTimeout(loadingTimeout);
       const isFirst = firstAuthCheckRef.current;
       firstAuthCheckRef.current = false;
       firebaseUserRef.current = user;
       if (user) {
         isGuestRef.current = false;
         try {
-          const snap = await getDoc(doc(db, 'users', user.uid));
+          // Timeout Firestore fetch after 5s to avoid hanging on slow connections
+          const snapPromise = getDoc(doc(db, 'users', user.uid));
+          const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000));
+          const snap = await Promise.race([snapPromise, timeoutPromise]);
           const saveData = snap.exists() ? snap.data() : null;
           const displayName = user.displayName || user.email?.split('@')[0] || 'Player';
           enterGame(displayName, saveData, { instant: isFirst });
@@ -248,28 +262,53 @@ export default function Casino() {
       }
       setInitialLoading(false);
     });
-    return () => unsub();
+    return () => { unsub(); clearTimeout(loadingTimeout); };
   }, [enterGame]);
 
   useEffect(() => {
     if (loaded && sessionChipsStartRef.current === -1) sessionChipsStartRef.current = chips;
   }, [loaded, chips]);
 
-  // Debounced save — Firestore for auth users, localStorage for guests
+  const doSave = useCallback((currentChips, currentStats, currentSettings) => {
+    const user = firebaseUserRef.current;
+    setSaveStatus('saving');
+    if (user && !isGuestRef.current) {
+      setDoc(doc(db, 'users', user.uid), {
+        schemaVersion: 1, chips: currentChips, stats: currentStats, settings: currentSettings, savedAt: serverTimestamp(),
+      }).then(() => {
+        setSaveStatus('saved');
+        if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
+        saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 3000);
+      }).catch(() => setSaveStatus('idle'));
+    } else if (isGuestRef.current) {
+      try { localStorage.setItem('casinoGuestSave', JSON.stringify({ chips: currentChips, stats: currentStats, settings: currentSettings })); } catch (e) {}
+      setSaveStatus('saved');
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
+      saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 3000);
+    } else {
+      setSaveStatus('idle');
+    }
+  }, []);
+
+  // Debounced auto-save — Firestore for auth users, localStorage for guests
+  const chipsRef2 = useRef(chips);
+  const statsRef2 = useRef(stats);
+  const settingsRef2 = useRef(settings);
+  chipsRef2.current = chips;
+  statsRef2.current = stats;
+  settingsRef2.current = settings;
   useEffect(() => {
     if (!loaded) return;
     if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     saveDebounceRef.current = setTimeout(() => {
-      const user = firebaseUserRef.current;
-      if (user && !isGuestRef.current) {
-        setDoc(doc(db, 'users', user.uid), {
-          schemaVersion: 1, chips, stats, settings, savedAt: serverTimestamp(),
-        }).catch(() => {});
-      } else if (isGuestRef.current) {
-        try { localStorage.setItem('casinoGuestSave', JSON.stringify({ chips, stats, settings })); } catch (e) {}
-      }
-    }, 1000);
-  }, [chips, stats, settings, loaded]);
+      doSave(chipsRef2.current, statsRef2.current, settingsRef2.current);
+    }, 5 * 60 * 1000); // auto-save every 5 minutes
+  }, [chips, stats, settings, loaded, doSave]);
+
+  const onManualSave = useCallback(() => {
+    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+    doSave(chipsRef2.current, statsRef2.current, settingsRef2.current);
+  }, [doSave]);
   useEffect(() => {
     const prev = prevChipsRef.current;
     const diff = chips - prev;
@@ -697,15 +736,8 @@ export default function Casino() {
   };
   const handleResetStats = useCallback(() => {
     setChips(1000); prevChipsRef.current = 1000; setStats(INITIAL_STATS);
-    const user = firebaseUserRef.current;
-    if (user && !isGuestRef.current) {
-      setDoc(doc(db, 'users', user.uid), {
-        schemaVersion: 1, chips: 1000, stats: INITIAL_STATS, settings, savedAt: serverTimestamp(),
-      }).catch(() => {});
-    } else if (isGuestRef.current) {
-      try { localStorage.setItem('casinoGuestSave', JSON.stringify({ chips: 1000, stats: INITIAL_STATS, settings })); } catch (e) {}
-    }
-  }, [settings]);
+    doSave(1000, INITIAL_STATS, settingsRef2.current);
+  }, [doSave]);
   return (
     <div className={`${settings.animSpeed === "fast" ? "anim-fast" : settings.animSpeed === "instant" ? "anim-instant" : ""}${(settings.theme || "dark") === "light" ? " theme-light" : ""}`}
       style={{ background:"#080604", minHeight:"100vh", overflowX:"hidden", maxWidth:"100vw",
@@ -734,6 +766,7 @@ export default function Casino() {
       {currentGame===null && <TitleScreen chips={chips} onSelectGame={selectGame} onRebuy={handleRebuy} stats={stats}
         onResetStats={handleResetStats} username={username} onSignOut={handleSignOut}
         isGuest={isGuestRef.current} userEmail={firebaseUserRef.current?.email || null}
+        onManualSave={onManualSave} saveStatus={saveStatus}
         onAdminSetStats={setStats} onAdminSetChips={setChips}
         forceJackpot={forceJackpot} setForceJackpot={setForceJackpot}
         sessionStart={sessionStartRef.current} sessionRounds={sessionRounds}

@@ -42,6 +42,23 @@ const inp = {
   transition: 'border-color 0.2s',
 };
 
+function Spinner() {
+  return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12, padding:'16px 0' }}>
+      <div style={{
+        width:28, height:28, borderRadius:'50%',
+        border:'3px solid rgba(255,255,255,0.1)',
+        borderTopColor: theme.accent || '#d4af37',
+        animation:'spin 0.7s linear infinite',
+      }} />
+      <div style={{ fontSize:10, color:'#a09070', fontFamily:'JetBrains Mono, monospace', letterSpacing:2 }}>
+        CONNECTING...
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 export function AuthScreen({ onGuestPlay }) {
   const [tab, setTab] = useState('signin'); // 'signin' | 'signup' | 'reset'
   const [email, setEmail] = useState('');
@@ -156,7 +173,7 @@ export function AuthScreen({ onGuestPlay }) {
           background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
           borderRadius: 14, padding: '20px 20px 16px',
         }}>
-          {tab === 'reset' ? (
+          {loading ? <Spinner /> : tab === 'reset' ? (
             resetSent ? (
               <div style={{ textAlign: 'center', padding: '8px 0' }}>
                 <div style={{ fontSize: 24, marginBottom: 8 }}>✉️</div>
